@@ -36,74 +36,78 @@ jobs:
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
-      SELECTED_IMAGE: ${{ contains(inputs.event_name, 'dot-net') && 'mcr.microsoft.com/dotnet/sdk:7.0' || 'veracode/scm-packaging:2.1.0' }}
-
     steps:
-      - name: Log selected container image
-        run: |
-          echo "🔧 Selected container image: $SELECTED_IMAGE (based on event name: ${{ inputs.event_name }})"
+    - name: Log selected container image
+      run: |
+        echo "Selected event name: ${{ inputs.event_name }}"
+        if [[ "${{ inputs.event_name }}" == *"dot-net"* ]]; then
+          echo "Using .NET SDK image"
+        else
+          echo "Using Veracode packaging image"
+        fi
 
-      - uses: actions/checkout@v4
-        with:
-          path: 'veracode-helper'
+    - uses: actions/checkout@v4
+      with:
+        path: 'veracode-helper'
 
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repository }}
-          ref: ${{ inputs.ref }}
-          token: ${{ inputs.token }}
-          path: 'source-code'
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref }}
+        token: ${{ inputs.token }}
+        path: 'source-code'
 
-      - name: Package the application
-        id: application_package
-        shell: bash
-        env:
-          VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
-          VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
-        run: |
-          if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
-            echo "🚀 Running Pre-Build Dependency Command..."
-            ${{ inputs.build_predependency_command }}
-          else
-            echo "ℹ️ No Pre-Build Dependency Command provided."
-          fi
+    - name: Package the application
+      id: application_package
+      shell: bash
+      env:
+        VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
+        VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
+      run: |
+        if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
+          echo "Executing Pre-Build Dependency Command..."
+          ${{ inputs.build_predependency_command }}
+        else
+          echo "No Pre-Build Dependency Command provided."
+        fi
 
-          if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
-            echo "💎 Ruby pipeline detected. Setting up Ruby ${{ inputs.ruby_version }}"
-            source /etc/profile.d/rvm.sh
-            rvm pkg install openssl
-            rvm install ruby-${{ inputs.ruby_version }}
-          fi
+        if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
+          echo "Ruby event detected, configuring Ruby environment..."
+          source /etc/profile.d/rvm.sh
+          rvm pkg install openssl
+          rvm install ruby-${{ inputs.ruby_version }}
+        fi
 
-          working_path=$(pwd)
-          echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
+        working_path=$(pwd)
+        echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
 
-          cd veracode-helper/helper/cli
-          cliFile=$(ls -1 . | head -n 1)
-          cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
-          tar -zxvf $cliFile
-          cd $cliFileName
-          export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
-          cd $working_path
+        cd veracode-helper/helper/cli
+        cliFile=$(ls -1 . | head -n 1)
+        cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
+        tar -zxvf $cliFile
+        cd $cliFileName
+        export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
+        cd $working_path
 
-          if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
-            gem install --install-dir source-code veracode
-            cd source-code
-            gem install bundler -v ${{ inputs.bundle_version }}
-            bundle install
-            cd ..
-          fi
+        if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
+          echo "Installing Veracode Ruby gem..."
+          gem install --install-dir source-code veracode
+          cd source-code
+          gem install bundler -v ${{ inputs.bundle_version }}
+          bundle install
+          cd ..
+        fi
 
-          echo "📦 Packaging application with Veracode CLI..."
-          veracode package --source source-code --output veracode-artifacts --trust
+        echo "Running Veracode packaging..."
+        veracode package --source source-code --output veracode-artifacts --trust
 
-      - name: Package error
-        if: failure() && steps.application_package.outcome == 'failure'
-        run: |
-          echo "::error::❌ Veracode static scan faced a problem. Please contact your Veracode administrator for more information."
+    - name: Package error
+      if: failure() && steps.application_package.outcome == 'failure'
+      run: |
+        echo "::error::Veracode static scan faced a problem. Please contact your Veracode administrator for more information."
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: veracode-artifact
-          path: "${{ steps.application_package.outputs.working_dir }}/veracode-artifacts/*"
-          if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      with:
+        name: veracode-artifact
+        path: "${{ steps.application_package.outputs.working_dir }}/veracode-artifacts/*"
+        if-no-files-found: error
