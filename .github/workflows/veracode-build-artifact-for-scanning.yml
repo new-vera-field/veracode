@@ -15,6 +15,9 @@ on:
       event_name:
         required: true
         type: string
+      build_runs_on:
+        required: true
+        type: string
       build_packager_image:
         required: true
         type: string
@@ -36,6 +39,7 @@ jobs:
       repository: ${{ inputs.repository }}
       ref: ${{ inputs.ref }}
       token: ${{ inputs.token }}
+      build_runs_on: ${{ inputs.build_runs_on }}
       build_packager_image: ${{ inputs.build_packager_image }}
       build_predependency_command: ${{ inputs.build_predependency_command }}
       ruby_version: ${{ inputs.ruby_version }}
