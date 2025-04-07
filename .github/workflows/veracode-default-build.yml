@@ -18,9 +18,6 @@ on:
       build_runs_on:
         required: true
         type: string
-      build_packager_image:
-        required: true
-        type: string
       build_predependency_command:
         required: true
         type: string
@@ -35,12 +32,17 @@ jobs:
   build:
     runs-on: ${{ fromJSON(inputs.build_runs_on) }}
     container:
-      image: ${{ contains(inputs.event_name, 'dot-net') && 'mcr.microsoft.com/dotnet/sdk:7.0' || inputs.build_packager_image }}
+      image: ${{ contains(inputs.event_name, 'dot-net') && 'mcr.microsoft.com/dotnet/sdk:7.0' || 'veracode/scm-packaging:2.1.0' }}
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
+      SELECTED_IMAGE: ${{ contains(inputs.event_name, 'dot-net') && 'mcr.microsoft.com/dotnet/sdk:7.0' || 'veracode/scm-packaging:2.1.0' }}
 
     steps:
+      - name: Log selected container image
+        run: |
+          echo "🔧 Selected container image: $SELECTED_IMAGE (based on event name: ${{ inputs.event_name }})"
+
       - uses: actions/checkout@v4
         with:
           path: 'veracode-helper'
@@ -60,19 +62,20 @@ jobs:
           VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
         run: |
           if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
-            echo "Executing Pre-Build Dependency.."
+            echo "🚀 Running Pre-Build Dependency Command..."
             ${{ inputs.build_predependency_command }}
           else
-            echo "No Pre-Build Dependency provided."
+            echo "ℹ️ No Pre-Build Dependency Command provided."
           fi
 
           if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
+            echo "💎 Ruby pipeline detected. Setting up Ruby ${{ inputs.ruby_version }}"
             source /etc/profile.d/rvm.sh
             rvm pkg install openssl
             rvm install ruby-${{ inputs.ruby_version }}
           fi
 
-          working_path=`pwd`
+          working_path=$(pwd)
           echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
 
           cd veracode-helper/helper/cli
@@ -80,7 +83,7 @@ jobs:
           cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
           tar -zxvf $cliFile
           cd $cliFileName
-          export PATH="$working_path/veracode-helper/helper/cli/$cliFileName:$PATH"
+          export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
           cd $working_path
 
           if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
@@ -91,12 +94,13 @@ jobs:
             cd ..
           fi
 
+          echo "📦 Packaging application with Veracode CLI..."
           veracode package --source source-code --output veracode-artifacts --trust
 
       - name: Package error
         if: failure() && steps.application_package.outcome == 'failure'
         run: |
-          echo "::error::Veracode static scan faced a problem. Please contact your Veracode administrator for more information."
+          echo "::error::❌ Veracode static scan faced a problem. Please contact your Veracode administrator for more information."
 
       - uses: actions/upload-artifact@v4
         with:
