@@ -1,5 +1,4 @@
 name: Veracode Build
-
 on:
   workflow_call:
     inputs:
@@ -35,85 +34,65 @@ jobs:
   build:
     runs-on: ${{ fromJSON(inputs.build_runs_on) }}
     container:
-      image: ${{ contains(inputs.event_name, 'dot-net') && 'mcr.microsoft.com/dotnet/sdk:7.0' || inputs.build_packager_image }}
-
+      image: ${{ inputs.build_packager_image }}
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
-
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: 'veracode-helper'
+    - uses: actions/checkout@v4
+      with:
+        path: 'veracode-helper'
 
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repository }}
-          ref: ${{ inputs.ref }}
-          token: ${{ inputs.token }}
-          path: 'source-code'
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref }}
+        token: ${{ inputs.token }}
+        path: 'source-code'
 
-      - name: Package the application
-        id: application_package
-        shell: bash
-        env:
-          VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
-          VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
-        run: |
-          if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
-            echo "Executing Pre-Build Dependency.."
-            ${{ inputs.build_predependency_command }}
-          else
-            echo "No Pre-Build Dependency provided."
-          fi
+    - name: Package the application
+      id: application_package
+      shell: bash
+      env:
+        VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
+        VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
+      run: |
+        if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
+          echo "Executing Pre-Build Dependency.."
+          ${{ inputs.build_predependency_command }}
+        else
+          echo "No Pre-Build Dependency provided."
+        fi
+        if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
+          source /etc/profile.d/rvm.sh
+          rvm pkg install openssl
+          rvm install ruby-${{ inputs.ruby_version }}
+        fi
+        working_path=`pwd`
+        echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
+        cd veracode-helper/helper/cli
+        cliFile=$(ls -1 . | head -n 1)
+        cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
+        tar -zxvf $cliFile
+        cd $cliFileName
+        export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
+        cd $working_path
+        if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
+          gem install --install-dir source-code veracode
+          cd source-code
+          gem install bundler -v ${{ inputs.bundle_version }}
+          bundle install
+          cd ..
+        fi
+        veracode package --source source-code --output veracode-artifacts --trust
 
-          # MSBuild / dotnet-specific block
-          if [[ "${{ inputs.event_name }}" == *"dot-net"* ]]; then
-            echo "Detected .NET build"
-            cd source-code
-            dotnet restore
-            dotnet build --configuration Release
-            dotnet publish -c Release -o ../dotnet-output
-            cd ..
-          fi
+    - name: Package error
+      if: failure() && steps.application_package.outcome == 'failure'
+      run: |
+        echo "::error::Veracode static scan faced a problem. Please contact your Veracode administrator for more information."
 
-          # Ruby-specific block
-          if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
-            source /etc/profile.d/rvm.sh
-            rvm pkg install openssl
-            rvm install ruby-${{ inputs.ruby_version }}
-            gem install --install-dir source-code veracode
-            cd source-code
-            gem install bundler -v ${{ inputs.bundle_version }}
-            bundle install
-            cd ..
-          fi
-
-          # Veracode CLI setup
-          working_path=`pwd`
-          echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
-          cd veracode-helper/helper/cli
-          cliFile=$(ls -1 . | head -n 1)
-          cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
-          tar -zxvf $cliFile
-          cd $cliFileName
-          export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
-          cd $working_path
-
-          # Package with Veracode CLI
-          if [[ "${{ inputs.event_name }}" == *"dot-net"* ]]; then
-            veracode package --source dotnet-output --output veracode-artifacts --trust
-          else
-            veracode package --source source-code --output veracode-artifacts --trust
-          fi
-
-      - name: Package error
-        if: failure() && steps.application_package.outcome == 'failure'
-        run: |
-          echo "::error::Veracode static scan faced a problem. Please contact your Veracode administrator for more information."
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: veracode-artifact
-          path: "${{ steps.application_package.outputs.working_dir }}/veracode-artifacts/*"
-          if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      with:
+        name: veracode-artifact
+        path: "${{ steps.application_package.outputs.working_dir }}/veracode-artifacts/*"
+        if-no-files-found: error
