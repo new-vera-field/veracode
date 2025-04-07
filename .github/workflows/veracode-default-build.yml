@@ -12,30 +12,34 @@ on:
       token:
         required: true
         type: string
-      language:
+      event_name:
         required: true
         type: string
       build_runs_on:
         required: true
         type: string
+      build_packager_image:
+        required: true
+        type: string
       build_predependency_command:
-        required: false
+        required: true
         type: string
       ruby_version:
-        required: false
+        required: true
         type: string
       bundle_version:
-        required: false
+        required: true
         type: string
 
 jobs:
   build:
     runs-on: ${{ fromJSON(inputs.build_runs_on) }}
     container:
-      image: ${{ inputs.language == 'dotnet' && 'mcr.microsoft.com/dotnet/sdk:7.0' || 'veracode/scm-packaging:2.1.0' }}
+      image: ${{ contains(inputs.event_name, 'dot-net') && 'mcr.microsoft.com/dotnet/sdk:7.0' || inputs.build_packager_image }}
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,19 +60,19 @@ jobs:
           VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
         run: |
           if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
-            echo "Executing Pre-Build Dependency..."
+            echo "Executing Pre-Build Dependency.."
             ${{ inputs.build_predependency_command }}
           else
             echo "No Pre-Build Dependency provided."
           fi
 
-          if [[ "${{ inputs.language }}" == "ruby" ]]; then
+          if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
             source /etc/profile.d/rvm.sh
             rvm pkg install openssl
             rvm install ruby-${{ inputs.ruby_version }}
           fi
 
-          working_path=$(pwd)
+          working_path=`pwd`
           echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
 
           cd veracode-helper/helper/cli
@@ -79,7 +83,7 @@ jobs:
           export PATH="$working_path/veracode-helper/helper/cli/$cliFileName:$PATH"
           cd $working_path
 
-          if [[ "${{ inputs.language }}" == "ruby" ]]; then
+          if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
             gem install --install-dir source-code veracode
             cd source-code
             gem install bundler -v ${{ inputs.bundle_version }}
