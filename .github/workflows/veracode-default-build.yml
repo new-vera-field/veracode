@@ -73,12 +73,24 @@ jobs:
         echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
 
         cd veracode-helper/helper/cli
-        cliFile=$(ls -1 . | head -n 1)
-        cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
-        tar -zxvf $cliFile
-        cd $cliFileName
-        export PATH="$working_path/veracode-helper/helper/cli/$cliFileName:$PATH"
-        cd $working_path
+        working_path=$(pwd)
+
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          echo "Downloading Windows version of Veracode CLI..."
+          curl -LO https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip
+          unzip pipeline-scan-LATEST.zip -d veracode-cli
+          VERACODE_CLI="$working_path/veracode-helper/helper/cli/veracode-cli/pipeline-scan.exe"
+        else
+          echo "Using Linux version of Veracode CLI..."
+          cliFile=$(ls -1 . | head -n 1)
+          cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
+          tar -zxvf $cliFile
+          export PATH="$working_path/veracode-helper/helper/cli/$cliFileName:$PATH"
+          VERACODE_CLI="$working_path/veracode-helper/helper/cli/$cliFileName/veracode"
+        fi
+
+        cd "$working_path"
+
 
         if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
           gem install --install-dir source-code veracode
