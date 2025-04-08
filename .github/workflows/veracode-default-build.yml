@@ -32,9 +32,12 @@ on:
 
 jobs:
   build:
-    runs-on: "windows-latest"
-    container:
-      image: mcr.microsoft.com/dotnet/framework/sdk:4.8
+    name: Veracode Build
+    runs-on: ${{ contains(inputs.event_name, 'dot-net') && 'windows-latest' || 'ubuntu-latest' }}
+
+    container: ${{ contains(inputs.event_name, 'dot-net') && '' || inputs.build_packager_image }}
+    if: ${{ contains(inputs.event_name, 'dot-net') || true }}
+
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
