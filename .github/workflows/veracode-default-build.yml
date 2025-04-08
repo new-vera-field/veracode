@@ -1,4 +1,5 @@
 name: Veracode Build
+
 on:
   workflow_call:
     inputs:
@@ -32,11 +33,14 @@ on:
 
 jobs:
   build:
-    runs-on: 'windows-latest'
+    runs-on: ${{ fromJSON(inputs.build_runs_on) }}
+    # Only use container if not running on Windows
+    container: ${{ contains(inputs.build_runs_on, 'windows') && '' || inputs.build_packager_image }}
+    if: always()
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
-      
+
     steps:
     - uses: actions/checkout@v4
       with:
@@ -52,9 +56,6 @@ jobs:
     - name: Package the application
       id: application_package
       shell: bash
-      env:
-        VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
-        VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
       run: |
         if [[ ! -z "${{ inputs.build_predependency_command }}" ]]; then
           echo "Executing Pre-Build Dependency.."
@@ -62,20 +63,24 @@ jobs:
         else
           echo "No Pre-Build Dependency provided."
         fi
+
         if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
           source /etc/profile.d/rvm.sh
           rvm pkg install openssl
           rvm install ruby-${{ inputs.ruby_version }}
         fi
-        working_path=`pwd`
+
+        working_path=$(pwd)
         echo "working_dir=$working_path" >> "$GITHUB_OUTPUT"
+
         cd veracode-helper/helper/cli
         cliFile=$(ls -1 . | head -n 1)
         cliFileName=$(echo "$cliFile" | cut -c 1-$((${#cliFile}-7)))
         tar -zxvf $cliFile
         cd $cliFileName
-        export PATH="veracode-helper/helper/cli/$cliFileName:$PATH"
+        export PATH="$working_path/veracode-helper/helper/cli/$cliFileName:$PATH"
         cd $working_path
+
         if [[ "${{ inputs.event_name }}" == *"ruby"* ]]; then
           gem install --install-dir source-code veracode
           cd source-code
@@ -83,6 +88,15 @@ jobs:
           bundle install
           cd ..
         fi
+
+        # Use MSBuild on Windows only
+        if [[ "${{ inputs.event_name }}" == *"dot-net"* && "${{ runner.os }}" == "Windows" ]]; then
+          echo "Detected Windows + .NET project. Using MSBuild..."
+          cd source-code
+          msbuild *.sln /p:Configuration=Release
+          cd ..
+        fi
+
         veracode package --source source-code --output veracode-artifacts --trust
 
     - name: Package error
