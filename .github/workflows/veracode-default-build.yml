@@ -38,6 +38,7 @@ jobs:
     env:
       VERACODE_API_KEY_ID: '${{ secrets.VERACODE_API_ID }}'
       VERACODE_API_KEY_SECRET: '${{ secrets.VERACODE_API_KEY }}'
+      
     steps:
     - uses: actions/checkout@v4
       with:
