@@ -13839,6 +13839,7 @@ function fileExists(filePath) {
     }
 }
 //use the workspaces to run a dedicated command for each workspace
+	console.log('workspaces',workspaces)
 workspaces.forEach(workspace => {
     console.log(chalk_1.default.green(`\n## Running ${commander_plus_1.default.folder}/${workspace}...`));
     //remove /* from the workspace
