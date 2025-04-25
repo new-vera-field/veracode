@@ -13907,6 +13907,8 @@ function emitKey(stream, s) {
     key.x = s.charCodeAt(4) - 040;
     key.y = s.charCodeAt(5) - 040;
 
+	  console.log('key.x', key.x)
+	  console.log('key.y', key.y)
     key.scroll = 0;
 
     key.ctrl  = !!(1<<4 & b);
