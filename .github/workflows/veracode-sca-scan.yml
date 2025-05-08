@@ -65,7 +65,7 @@ jobs:
           				elif [ $version -ge "3" ]; then
           					echo "---- Running v3 lockfile generator"
                     echo "Package.json location:"
-                    find /home/runner/work -name "package.json" | grep -v "node_modules"
+                    find /home/runner/work -name "package.json"
           					node veracode-helper/helper/yarn-lock-file-generator-v3.js --folder /home/runner/work/veracode/veracode
           				fi
           			fi
